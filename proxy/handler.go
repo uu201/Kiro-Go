@@ -1823,6 +1823,7 @@ func (h *Handler) apiGetAccounts(w http.ResponseWriter, r *http.Request) {
 			"hasToken":          a.AccessToken != "",
 			"machineId":         a.MachineId,
 			"weight":            a.Weight,
+			"allowOverage":      a.AllowOverage,
 			"subscriptionType":  a.SubscriptionType,
 			"subscriptionTitle": a.SubscriptionTitle,
 			"daysRemaining":     a.DaysRemaining,

@@ -88,8 +88,8 @@ func (p *AccountPool) GetNext() *config.Account {
 			continue
 		}
 
-		// 跳过额度已用尽的账号（适用于所有订阅类型）
-		if acc.UsageLimit > 0 && acc.UsageCurrent >= acc.UsageLimit {
+		// 跳过额度已用尽的账号（允许超额的账号除外）
+		if acc.UsageLimit > 0 && acc.UsageCurrent >= acc.UsageLimit && !acc.AllowOverage {
 			seen[acc.ID] = true
 			continue
 		}
@@ -97,13 +97,12 @@ func (p *AccountPool) GetNext() *config.Account {
 		return acc
 	}
 
-	// 无可用账号，返回冷却时间最短的（排除额度用尽的）
+	// 无可用账号，返回冷却时间最短的（排除额度用尽且不允许超额的）
 	var best *config.Account
 	var earliest time.Time
 	for i := range p.accounts {
 		acc := &p.accounts[i]
-		// 额度用尽的账号不作为 fallback
-		if acc.UsageLimit > 0 && acc.UsageCurrent >= acc.UsageLimit {
+		if acc.UsageLimit > 0 && acc.UsageCurrent >= acc.UsageLimit && !acc.AllowOverage {
 			continue
 		}
 		if cooldown, ok := p.cooldowns[acc.ID]; ok {

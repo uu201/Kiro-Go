@@ -1280,8 +1280,11 @@
                 'filter.disabled': '已禁用',
                 'filter.banned': '已封禁',
                 'accounts.weight': '权重',
+                'accounts.overage': '超额',
                 'detail.weight': '请求权重',
-                'detail.weightHint': '0-1=普通, 2+=高优先级'
+                'detail.weightHint': '0-1=普通, 2+=高优先级',
+                'detail.allowOverage': '允许超额使用',
+                'detail.allowOverageHint': '状态从 Kiro 平台同步，刷新账号信息时自动更新'
             },
             en: {
                 'login.subtitle': 'Enter admin password to login',
@@ -1482,8 +1485,11 @@
                 'filter.disabled': 'Disabled',
                 'filter.banned': 'Banned',
                 'accounts.weight': 'Weight',
+                'accounts.overage': 'Overage',
                 'detail.weight': 'Request Weight',
-                'detail.weightHint': '0-1=normal, 2+=higher priority'
+                'detail.weightHint': '0-1=normal, 2+=higher priority',
+                'detail.allowOverage': 'Allow Overages',
+                'detail.allowOverageHint': 'Synced from Kiro platform, auto-updated on account refresh'
             }
         };
         let currentLang = localStorage.getItem('kiro_lang') || 'zh';
@@ -1749,6 +1755,7 @@
                 const isSelected = selectedAccounts.has(a.id);
                 const weightVal = a.weight || 0;
                 const weightBadge = weightVal >= 2 ? '<span class="badge" style="background:#f59e0b;color:#fff">W:' + weightVal + '</span>' : '';
+                const overageBadge = a.allowOverage ? '<span class="badge" style="background:#10b981;color:#fff">' + t('accounts.overage') + '</span>' : '';
                 return '<div class="account-card" style="' + (isSelected ? 'border-color:#7c3aed;background:#faf5ff' : '') + '">' +
                     '<div class="account-header">' +
                     '<div class="account-info" style="display:flex;align-items:center;gap:8px">' +
@@ -1759,6 +1766,7 @@
                     getSubBadge(a.subscriptionType) +
                     getTrialBadge(a) +
                     weightBadge +
+                    overageBadge +
                     '<span class="badge badge-info">' + formatAuthMethod(a.provider || a.authMethod) + '</span>' +
                     getStatusBadge(a) +
                     '</div>' +
@@ -1894,6 +1902,9 @@
                 '<input type="number" id="weightInput" value="' + (a.weight || 0) + '" min="0" max="10" style="width:80px">' +
                 '<span style="color:#64748b;font-size:12px;flex:1">' + t('detail.weightHint') + '</span>' +
                 '<button class="btn btn-sm btn-primary" onclick="saveWeight(\'' + id + '\')">' + t('common.saved').split(' ')[0] + '</button>' +
+                '</div></div>' +
+                '<div class="detail-section"><h4>' + t('detail.allowOverage') + '</h4><div class="machine-id-row">' +
+                '<label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="allowOverageInput" ' + (a.allowOverage ? 'checked' : '') + ' disabled> <span style="color:#64748b;font-size:12px">' + t('detail.allowOverageHint') + '</span></label>' +
                 '</div></div>' +
                 '<div class="detail-section"><h4>' + t('detail.subscription') + '</h4><div class="detail-grid">' +
                 '<div class="detail-item"><div class="detail-label">' + t('detail.subscriptionType') + '</div><div class="detail-value">' + (a.subscriptionTitle || a.subscriptionType || '-') + '</div></div>' +

@@ -37,8 +37,14 @@ func GetUsageLimits(account *config.Account) (*UsageLimitsResponse, error) {
 		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Printf("[GetUsageLimits] Response: %s\n", string(body))
+
 	var result UsageLimitsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -221,6 +227,11 @@ func RefreshAccountInfo(account *config.Account) (*config.AccountInfo, error) {
 		}
 	}
 
+	// 解析超额使用状态
+	if usage.OverageConfiguration != nil {
+		info.AllowOverage = usage.OverageConfiguration.OverageStatus == "ENABLED"
+	}
+
 	// 解析重置日期
 	if usage.NextDateReset != "" {
 		if ts, err := usage.NextDateReset.Int64(); err == nil && ts > 0 {
@@ -271,10 +282,16 @@ func parseSubscriptionType(raw string) string {
 
 // 响应结构体
 type UsageLimitsResponse struct {
-	UsageBreakdownList []UsageBreakdown  `json:"usageBreakdownList"`
-	NextDateReset      json.Number       `json:"nextDateReset"`
-	SubscriptionInfo   *SubscriptionInfo `json:"subscriptionInfo"`
-	UserInfo           *UserInfo         `json:"userInfo"`
+	UsageBreakdownList   []UsageBreakdown      `json:"usageBreakdownList"`
+	NextDateReset        json.Number            `json:"nextDateReset"`
+	SubscriptionInfo     *SubscriptionInfo      `json:"subscriptionInfo"`
+	UserInfo             *UserInfo              `json:"userInfo"`
+	OverageConfiguration *OverageConfiguration  `json:"overageConfiguration"`
+}
+
+type OverageConfiguration struct {
+	OverageLimit  interface{} `json:"overageLimit"`
+	OverageStatus string      `json:"overageStatus"`
 }
 
 type UsageBreakdown struct {

@@ -52,7 +52,8 @@ type Account struct {
 	MachineId    string `json:"machineId,omitempty"`    // UUID machine identifier for request tracking
 
 	// Priority weight for load balancing (higher = more requests)
-	Weight int `json:"weight,omitempty"` // 0 or 1 = normal, 2+ = higher priority
+	Weight       int  `json:"weight,omitempty"`       // 0 or 1 = normal, 2+ = higher priority
+	AllowOverage bool `json:"allowOverage,omitempty"` // Allow usage beyond quota limit
 
 	// Account status
 	Enabled   bool   `json:"enabled"`             // Whether account is active in the pool
@@ -134,6 +135,7 @@ type AccountInfo struct {
 	TrialUsagePercent float64
 	TrialStatus       string
 	TrialExpiresAt    int64
+	AllowOverage      bool
 }
 
 // Version 当前版本号
@@ -378,6 +380,7 @@ func UpdateAccountInfo(id string, info AccountInfo) error {
 			cfg.Accounts[i].TrialUsagePercent = info.TrialUsagePercent
 			cfg.Accounts[i].TrialStatus = info.TrialStatus
 			cfg.Accounts[i].TrialExpiresAt = info.TrialExpiresAt
+			cfg.Accounts[i].AllowOverage = info.AllowOverage
 			return Save()
 		}
 	}

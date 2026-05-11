@@ -1,0 +1,36 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+kiro-go
+
+# Test binary
+*.test
+
+# Output of go coverage
+*.out
+*.prof
+
+# Dependency directories
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Config with secrets
+config.json
+
+# Build output
+dist/
+build/
