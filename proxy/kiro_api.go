@@ -41,7 +41,7 @@ func GetUsageLimits(account *config.Account) (*UsageLimitsResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("[GetUsageLimits] Response: %s\n", string(body))
+	// fmt.Printf("[GetUsageLimits] Response: %s\n", string(body))
 
 	var result UsageLimitsResponse
 	if err := json.Unmarshal(body, &result); err != nil {
@@ -283,10 +283,10 @@ func parseSubscriptionType(raw string) string {
 // 响应结构体
 type UsageLimitsResponse struct {
 	UsageBreakdownList   []UsageBreakdown      `json:"usageBreakdownList"`
-	NextDateReset        json.Number            `json:"nextDateReset"`
-	SubscriptionInfo     *SubscriptionInfo      `json:"subscriptionInfo"`
-	UserInfo             *UserInfo              `json:"userInfo"`
-	OverageConfiguration *OverageConfiguration  `json:"overageConfiguration"`
+	NextDateReset        json.Number           `json:"nextDateReset"`
+	SubscriptionInfo     *SubscriptionInfo     `json:"subscriptionInfo"`
+	UserInfo             *UserInfo             `json:"userInfo"`
+	OverageConfiguration *OverageConfiguration `json:"overageConfiguration"`
 }
 
 type OverageConfiguration struct {
