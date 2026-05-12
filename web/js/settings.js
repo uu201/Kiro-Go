@@ -5,7 +5,59 @@ async function loadSettings() {
         document.getElementById('apiKeyInput').value = d.apiKey || '';
         loadThinkingConfig();
         loadEndpointConfig();
+        loadProxyConfig();
     } catch (e) { /* silent */ }
+}
+
+async function loadProxyConfig() {
+    try {
+        const d = await API.get('/admin/api/proxy');
+        const proxyURL = d.proxyURL || '';
+        if (!proxyURL) {
+            document.getElementById('proxyType').value = 'none';
+            document.getElementById('proxyFields').style.display = 'none';
+            return;
+        }
+        const u = new URL(proxyURL);
+        const scheme = u.protocol.replace(':', '');
+        document.getElementById('proxyType').value = scheme.startsWith('socks5') ? 'socks5' : 'http';
+        document.getElementById('proxyHost').value = u.hostname;
+        document.getElementById('proxyPort').value = u.port;
+        document.getElementById('proxyUsername').value = decodeURIComponent(u.username);
+        document.getElementById('proxyPassword').value = decodeURIComponent(u.password);
+        document.getElementById('proxyFields').style.display = '';
+    } catch (e) {
+        document.getElementById('proxyType').value = 'none';
+        document.getElementById('proxyFields').style.display = 'none';
+    }
+}
+
+function onProxyTypeChange() {
+    const type = document.getElementById('proxyType').value;
+    document.getElementById('proxyFields').style.display = type === 'none' ? 'none' : '';
+}
+
+async function saveProxyConfig(btn) {
+    const type = document.getElementById('proxyType').value;
+    let proxyURL = '';
+    if (type !== 'none') {
+        const host = document.getElementById('proxyHost').value.trim();
+        const port = document.getElementById('proxyPort').value.trim();
+        if (!host || !port) { UI.toastWarning(t('settings.proxyHostRequired')); return; }
+        const user = document.getElementById('proxyUsername').value.trim();
+        const pass = document.getElementById('proxyPassword').value.trim();
+        const auth = user ? (pass ? `${encodeURIComponent(user)}:${encodeURIComponent(pass)}@` : `${encodeURIComponent(user)}@`) : '';
+        proxyURL = `${type}://${auth}${host}:${port}`;
+    }
+    await UI.withLoading(btn, async () => {
+        try {
+            const d = await API.post('/admin/api/proxy', { proxyURL });
+            if (d.success) UI.toastSuccess(t('settings.proxySaved'));
+            else UI.toastError(t('common.saveFailed') + ': ' + (d.error || ''));
+        } catch (e) {
+            UI.toastError(t('common.saveFailed'));
+        }
+    });
 }
 
 async function loadThinkingConfig() {
