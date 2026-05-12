@@ -227,9 +227,20 @@ func RefreshAccountInfo(account *config.Account) (*config.AccountInfo, error) {
 		}
 	}
 
-	// 解析超额使用状态
+	// 解析超额使用状态与配额
 	if usage.OverageConfiguration != nil {
 		info.AllowOverage = usage.OverageConfiguration.OverageStatus == "ENABLED"
+		if usage.OverageConfiguration.OverageLimit != "" {
+			if f, err := usage.OverageConfiguration.OverageLimit.Float64(); err == nil && f > 0 {
+				info.OverageLimit = f
+			}
+		}
+		if info.UsageCurrent > info.UsageLimit && info.UsageLimit > 0 {
+			info.OverageCurrent = info.UsageCurrent - info.UsageLimit
+		}
+		if info.OverageLimit > 0 {
+			info.OveragePercent = info.OverageCurrent / info.OverageLimit
+		}
 	}
 
 	// 解析重置日期
@@ -290,7 +301,7 @@ type UsageLimitsResponse struct {
 }
 
 type OverageConfiguration struct {
-	OverageLimit  interface{} `json:"overageLimit"`
+	OverageLimit  json.Number `json:"overageLimit"`
 	OverageStatus string      `json:"overageStatus"`
 }
 

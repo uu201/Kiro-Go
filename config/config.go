@@ -73,6 +73,11 @@ type Account struct {
 	NextResetDate string  `json:"nextResetDate,omitempty"` // Date when usage resets (YYYY-MM-DD)
 	LastRefresh   int64   `json:"lastRefresh,omitempty"`   // Last info refresh timestamp
 
+	// Overage tracking (usage beyond main quota)
+	OverageCurrent float64 `json:"overageCurrent,omitempty"` // Current overage usage (credits beyond main quota)
+	OverageLimit   float64 `json:"overageLimit,omitempty"`   // Maximum allowed overage
+	OveragePercent float64 `json:"overagePercent,omitempty"` // Overage usage percentage (0.0-1.0)
+
 	// Trial usage tracking
 	TrialUsageCurrent float64 `json:"trialUsageCurrent,omitempty"` // Trial quota current usage
 	TrialUsageLimit   float64 `json:"trialUsageLimit,omitempty"`   // Trial quota total limit
@@ -142,6 +147,9 @@ type AccountInfo struct {
 	TrialStatus       string
 	TrialExpiresAt    int64
 	AllowOverage      bool
+	OverageCurrent    float64
+	OverageLimit      float64
+	OveragePercent    float64
 }
 
 // Version current version
@@ -387,6 +395,9 @@ func UpdateAccountInfo(id string, info AccountInfo) error {
 			cfg.Accounts[i].TrialStatus = info.TrialStatus
 			cfg.Accounts[i].TrialExpiresAt = info.TrialExpiresAt
 			cfg.Accounts[i].AllowOverage = info.AllowOverage
+			cfg.Accounts[i].OverageCurrent = info.OverageCurrent
+			cfg.Accounts[i].OverageLimit = info.OverageLimit
+			cfg.Accounts[i].OveragePercent = info.OveragePercent
 			return Save()
 		}
 	}
