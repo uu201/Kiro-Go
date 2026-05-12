@@ -157,6 +157,7 @@ function renderAccountCard(a) {
     const weightVal = a.weight || 0;
     const weightBadge = weightVal >= 2 ? '<span class="badge" style="background:#f59e0b;color:#fff">W:' + weightVal + '</span>' : '';
     const overageBadge = a.allowOverage ? '<span class="badge" style="background:#10b981;color:#fff">' + t('accounts.overage') + '</span>' : '';
+    const errorBtn = a.lastError ? '<button class="btn btn-sm btn-icon btn-error-outline" onclick="showLastError(\'' + a.id + '\')" title="' + t('accounts.lastError') + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button>' : '';
 
     return '<div class="account-card' + (isSelected ? ' is-selected' : '') + '" data-account-id="' + a.id + '">' +
         '<div class="account-header">' +
@@ -175,6 +176,7 @@ function renderAccountCard(a) {
         '</div>' +
         '</div>' +
         '<div class="account-actions">' +
+        errorBtn +
         '<button class="btn btn-sm btn-icon btn-secondary" onclick="refreshAccount(\'' + a.id + '\', this)" title="' + t('accounts.refresh') + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg></button>' +
         '<button class="btn btn-sm btn-icon btn-secondary" onclick="showDetail(\'' + a.id + '\')" title="' + t('accounts.detail') + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></button>' +
         '<button class="btn btn-sm btn-icon btn-secondary" onclick="copyAccountJSON(\'' + a.id + '\', this)" title="' + t('accounts.copyJSON') + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button>' +
@@ -189,12 +191,21 @@ function renderAccountCard(a) {
         '<div class="account-stat"><div class="account-stat-value">' + (a.requestCount || 0) + '</div><div class="account-stat-label">' + t('accounts.requests') + '</div></div>' +
         '<div class="account-stat"><div class="account-stat-value">' + formatNum(a.totalTokens || 0) + '</div><div class="account-stat-label">' + t('accounts.tokens') + '</div></div>' +
         '<div class="account-stat"><div class="account-stat-value">' + (a.totalCredits || 0).toFixed(1) + '</div><div class="account-stat-label">' + t('accounts.credits') + '</div></div>' +
+        '<div class="account-stat"><div class="account-stat-value" title="' + (a.lastUsed ? new Date(a.lastUsed * 1000).toLocaleString() : '') + '">' + formatRelativeTime(a.lastUsed) + '</div><div class="account-stat-label">' + t('accounts.lastUsed') + '</div></div>' +
         '<div class="account-stat"><div class="account-stat-value">' + formatTokenExpiry(a.expiresAt) + '</div><div class="account-stat-label">' + t('accounts.expiry') + '</div></div>' +
         '<div class="account-stat"><div class="account-stat-value"><select onchange="quickSetWeight(\'' + a.id + '\',this.value)" style="width:52px;padding:1px 2px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;text-align:center;cursor:pointer;background:#fff">' +
         [0,1,2,3,4,5].map(w => '<option value="' + w + '"' + (weightVal === w ? ' selected' : '') + '>' + w + '</option>').join('') +
         '</select></div><div class="account-stat-label">' + t('accounts.weight') + '</div></div>' +
         '</div>' +
         '</div>';
+}
+
+function showLastError(id) {
+    const a = accountsData.find(x => x.id === id);
+    if (!a || !a.lastError) return;
+    const timeStr = a.lastError.time ? new Date(a.lastError.time * 1000).toLocaleString() : '';
+    const message = a.lastError.message || '';
+    UI.alert(timeStr + '\n\n' + message, t('accounts.lastError'));
 }
 
 function getSubBadge(type) {

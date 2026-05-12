@@ -9,6 +9,13 @@ import (
 	"time"
 )
 
+// LastError 记录账号最近一次错误信息
+type LastError struct {
+	Message string `json:"message"`
+	Time    int64  `json:"time"`
+	IsQuota bool   `json:"isQuota"`
+}
+
 // AccountPool 账号池
 type AccountPool struct {
 	mu           sync.RWMutex
@@ -16,6 +23,7 @@ type AccountPool struct {
 	currentIndex uint64
 	cooldowns    map[string]time.Time // 账号冷却时间
 	errorCounts  map[string]int       // 连续错误计数
+	lastErrors   map[string]LastError // 最近一次错误
 }
 
 var (
@@ -29,6 +37,7 @@ func GetPool() *AccountPool {
 		pool = &AccountPool{
 			cooldowns:   make(map[string]time.Time),
 			errorCounts: make(map[string]int),
+			lastErrors:  make(map[string]LastError),
 		}
 		pool.Reload()
 	})
@@ -138,19 +147,49 @@ func (p *AccountPool) RecordSuccess(id string) {
 }
 
 // RecordError 记录请求错误，设置冷却
-func (p *AccountPool) RecordError(id string, isQuotaError bool) {
+func (p *AccountPool) RecordError(id string, isQuotaError bool, message string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	p.errorCounts[id]++
 
+	if message != "" {
+		const maxLen = 500
+		truncated := message
+		if len(truncated) > maxLen {
+			truncated = truncated[:maxLen] + "..."
+		}
+		p.lastErrors[id] = LastError{
+			Message: truncated,
+			Time:    time.Now().Unix(),
+			IsQuota: isQuotaError,
+		}
+	}
+
 	if isQuotaError {
-		// 配额错误，冷却 1 小时
 		p.cooldowns[id] = time.Now().Add(time.Hour)
 	} else if p.errorCounts[id] >= 3 {
-		// 连续 3 次错误，冷却 1 分钟
 		p.cooldowns[id] = time.Now().Add(time.Minute)
 	}
+}
+
+// GetLastError 获取指定账号最近一次错误
+func (p *AccountPool) GetLastError(id string) (LastError, bool) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	e, ok := p.lastErrors[id]
+	return e, ok
+}
+
+// GetLastErrors 获取所有账号最近错误的快照
+func (p *AccountPool) GetLastErrors() map[string]LastError {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	out := make(map[string]LastError, len(p.lastErrors))
+	for id, e := range p.lastErrors {
+		out[id] = e
+	}
+	return out
 }
 
 // UpdateToken 更新账号 Token

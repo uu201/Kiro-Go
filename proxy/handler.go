@@ -1106,7 +1106,7 @@ func (h *Handler) handleClaudeStream(w http.ResponseWriter, account *config.Acco
 			outputTokens = outTok
 		},
 		OnError: func(err error) {
-			h.pool.RecordError(account.ID, strings.Contains(err.Error(), "429") || strings.Contains(err.Error(), "quota"))
+			h.pool.RecordError(account.ID, strings.Contains(err.Error(), "429") || strings.Contains(err.Error(), "quota"), err.Error())
 		},
 		OnCredits: func(c float64) {
 			credits = c
@@ -1119,7 +1119,7 @@ func (h *Handler) handleClaudeStream(w http.ResponseWriter, account *config.Acco
 	err := CallKiroAPI(account, payload, callback)
 	if err != nil {
 		h.recordFailure()
-		h.pool.RecordError(account.ID, strings.Contains(err.Error(), "429") || strings.Contains(err.Error(), "quota"))
+		h.pool.RecordError(account.ID, strings.Contains(err.Error(), "429") || strings.Contains(err.Error(), "quota"), err.Error())
 		h.sendSSE(w, flusher, "error", map[string]interface{}{
 			"type":  "error",
 			"error": map[string]string{"type": "api_error", "message": err.Error()},
@@ -1262,7 +1262,7 @@ func (h *Handler) handleClaudeNonStream(w http.ResponseWriter, account *config.A
 			outputTokens = outTok
 		},
 		OnError: func(err error) {
-			h.pool.RecordError(account.ID, strings.Contains(err.Error(), "429"))
+			h.pool.RecordError(account.ID, strings.Contains(err.Error(), "429"), err.Error())
 		},
 		OnCredits: func(c float64) {
 			credits = c
@@ -1275,7 +1275,7 @@ func (h *Handler) handleClaudeNonStream(w http.ResponseWriter, account *config.A
 	err := CallKiroAPI(account, payload, callback)
 	if err != nil {
 		h.recordFailure()
-		h.pool.RecordError(account.ID, strings.Contains(err.Error(), "429"))
+		h.pool.RecordError(account.ID, strings.Contains(err.Error(), "429"), err.Error())
 		h.sendClaudeError(w, 500, "api_error", err.Error())
 		return
 	}
@@ -1707,7 +1707,7 @@ func (h *Handler) handleOpenAIStream(w http.ResponseWriter, account *config.Acco
 			outputTokens = outTok
 		},
 		OnError: func(err error) {
-			h.pool.RecordError(account.ID, strings.Contains(err.Error(), "429"))
+			h.pool.RecordError(account.ID, strings.Contains(err.Error(), "429"), err.Error())
 		},
 		OnCredits: func(c float64) {
 			credits = c
@@ -1720,7 +1720,7 @@ func (h *Handler) handleOpenAIStream(w http.ResponseWriter, account *config.Acco
 	err := CallKiroAPI(account, payload, callback)
 	if err != nil {
 		h.recordFailure()
-		h.pool.RecordError(account.ID, strings.Contains(err.Error(), "429"))
+		h.pool.RecordError(account.ID, strings.Contains(err.Error(), "429"), err.Error())
 		return
 	}
 
@@ -1804,7 +1804,7 @@ func (h *Handler) handleOpenAINonStream(w http.ResponseWriter, account *config.A
 		},
 		OnToolUse:  func(tu KiroToolUse) { toolUses = append(toolUses, tu) },
 		OnComplete: func(inTok, outTok int) { inputTokens = inTok; outputTokens = outTok },
-		OnError:    func(err error) { h.pool.RecordError(account.ID, strings.Contains(err.Error(), "429")) },
+		OnError:    func(err error) { h.pool.RecordError(account.ID, strings.Contains(err.Error(), "429"), err.Error()) },
 		OnCredits:  func(c float64) { credits = c },
 		OnContextUsage: func(pct float64) {
 			realInputTokens = int(pct * float64(getContextWindowSize(model)) / 100.0)
@@ -1814,7 +1814,7 @@ func (h *Handler) handleOpenAINonStream(w http.ResponseWriter, account *config.A
 	err := CallKiroAPI(account, payload, callback)
 	if err != nil {
 		h.recordFailure()
-		h.pool.RecordError(account.ID, strings.Contains(err.Error(), "429"))
+		h.pool.RecordError(account.ID, strings.Contains(err.Error(), "429"), err.Error())
 		h.sendOpenAIError(w, 500, "server_error", err.Error())
 		return
 	}
@@ -1972,6 +1972,7 @@ func (h *Handler) handleAdminAPI(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) apiGetAccounts(w http.ResponseWriter, r *http.Request) {
 	accounts := config.GetAccounts()
 	poolAccounts := h.pool.GetAllAccounts()
+	lastErrors := h.pool.GetLastErrors()
 
 	// 合并运行时统计
 	statsMap := make(map[string]config.Account)
@@ -1984,6 +1985,15 @@ func (h *Handler) apiGetAccounts(w http.ResponseWriter, r *http.Request) {
 	for i, a := range accounts {
 		// 获取运行时统计
 		stats := statsMap[a.ID]
+
+		var lastErrorMap map[string]interface{}
+		if le, ok := lastErrors[a.ID]; ok {
+			lastErrorMap = map[string]interface{}{
+				"message": le.Message,
+				"time":    le.Time,
+				"isQuota": le.IsQuota,
+			}
+		}
 
 		result[i] = map[string]interface{}{
 			"id":                a.ID,
@@ -2020,6 +2030,7 @@ func (h *Handler) apiGetAccounts(w http.ResponseWriter, r *http.Request) {
 			"totalTokens":       stats.TotalTokens,
 			"totalCredits":      stats.TotalCredits,
 			"lastUsed":          stats.LastUsed,
+			"lastError":         lastErrorMap,
 		}
 	}
 	json.NewEncoder(w).Encode(result)

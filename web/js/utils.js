@@ -55,6 +55,16 @@ function formatTokenExpiry(ts) {
     return Math.floor(diff / 86400) + t('time.days');
 }
 
+function formatRelativeTime(ts) {
+    if (!ts) return '-';
+    const diff = Date.now() / 1000 - ts;
+    if (diff < 0) return '-';
+    if (diff < 60) return t('time.justNow');
+    if (diff < 3600) return Math.floor(diff / 60) + t('time.minutesAgo');
+    if (diff < 86400) return Math.floor(diff / 3600) + t('time.hoursAgo');
+    return Math.floor(diff / 86400) + t('time.daysAgo');
+}
+
 function formatTrialExpiry(timestamp) {
     if (!timestamp) return '';
     const date = new Date(timestamp * 1000);

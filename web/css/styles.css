@@ -156,6 +156,17 @@ textarea {
     color: white;
 }
 
+.btn-error-outline {
+    background: #fee2e2;
+    color: #dc2626;
+    border: 1px solid #fecaca;
+}
+
+.btn-error-outline:hover {
+    background: #fecaca;
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.18);
+}
+
 .btn-sm {
     padding: 8px 12px;
     font-size: 13px;
