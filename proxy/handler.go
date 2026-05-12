@@ -34,6 +34,9 @@ type Handler struct {
 	modelsCacheMu   sync.RWMutex
 	modelsCacheTime int64
 	promptCache     *promptCacheTracker
+	// 每账号正在进行的请求数
+	activeRequests map[string]int
+	activeMu       sync.RWMutex
 }
 
 type thinkingStreamSource int
@@ -221,12 +224,39 @@ func NewHandler() *Handler {
 		stopRefresh:     make(chan struct{}),
 		stopStatsSaver:  make(chan struct{}),
 		promptCache:     newPromptCacheTracker(defaultPromptCacheTTL),
+		activeRequests:  make(map[string]int),
 	}
 	// 启动后台刷新
 	go h.backgroundRefresh()
 	// 启动后台统计保存 (每30秒保存一次)
 	go h.backgroundStatsSaver()
 	return h
+}
+
+func (h *Handler) incrementActive(accountID string) {
+	h.activeMu.Lock()
+	h.activeRequests[accountID]++
+	h.activeMu.Unlock()
+}
+
+func (h *Handler) decrementActive(accountID string) {
+	h.activeMu.Lock()
+	if h.activeRequests[accountID] > 1 {
+		h.activeRequests[accountID]--
+	} else {
+		delete(h.activeRequests, accountID)
+	}
+	h.activeMu.Unlock()
+}
+
+func (h *Handler) snapshotActive() map[string]int {
+	h.activeMu.RLock()
+	defer h.activeMu.RUnlock()
+	snapshot := make(map[string]int, len(h.activeRequests))
+	for id, n := range h.activeRequests {
+		snapshot[id] = n
+	}
+	return snapshot
 }
 
 // backgroundRefresh 后台定时刷新账户信息
@@ -727,6 +757,9 @@ func (h *Handler) handleClaudeMessagesInternal(w http.ResponseWriter, r *http.Re
 
 // handleClaudeStream Claude 流式响应
 func (h *Handler) handleClaudeStream(w http.ResponseWriter, account *config.Account, payload *KiroPayload, model string, thinking bool, thinkingOpts claudeThinkingResponseOptions, estimatedInputTokens int, cacheUsage promptCacheUsage, cacheProfile *promptCacheProfile) {
+	h.incrementActive(account.ID)
+	defer h.decrementActive(account.ID)
+
 	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -1203,6 +1236,9 @@ func (h *Handler) recordFailure() {
 
 // handleClaudeNonStream Claude 非流式响应
 func (h *Handler) handleClaudeNonStream(w http.ResponseWriter, account *config.Account, payload *KiroPayload, model string, thinking bool, thinkingOpts claudeThinkingResponseOptions, estimatedInputTokens int, cacheUsage promptCacheUsage, cacheProfile *promptCacheProfile) {
+	h.incrementActive(account.ID)
+	defer h.decrementActive(account.ID)
+
 	var content string
 	var thinkingContent string
 	var toolUses []KiroToolUse
@@ -1362,6 +1398,9 @@ func (h *Handler) handleOpenAIChat(w http.ResponseWriter, r *http.Request) {
 
 // handleOpenAIStream OpenAI 流式响应
 func (h *Handler) handleOpenAIStream(w http.ResponseWriter, account *config.Account, payload *KiroPayload, model string, thinking bool, estimatedInputTokens int) {
+	h.incrementActive(account.ID)
+	defer h.decrementActive(account.ID)
+
 	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -1745,6 +1784,9 @@ func (h *Handler) handleOpenAIStream(w http.ResponseWriter, account *config.Acco
 
 // handleOpenAINonStream OpenAI 非流式响应
 func (h *Handler) handleOpenAINonStream(w http.ResponseWriter, account *config.Account, payload *KiroPayload, model string, thinking bool, estimatedInputTokens int) {
+	h.incrementActive(account.ID)
+	defer h.decrementActive(account.ID)
+
 	var content string
 	var reasoningContent string
 	var toolUses []KiroToolUse
@@ -1893,6 +1935,8 @@ func (h *Handler) handleAdminAPI(w http.ResponseWriter, r *http.Request) {
 		h.apiImportCredentials(w, r)
 	case path == "/status" && r.Method == "GET":
 		h.apiGetStatus(w, r)
+	case path == "/active" && r.Method == "GET":
+		h.apiGetActive(w, r)
 	case path == "/settings" && r.Method == "GET":
 		h.apiGetSettings(w, r)
 	case path == "/settings" && r.Method == "POST":
@@ -2529,6 +2573,18 @@ func (h *Handler) apiGetStatus(w http.ResponseWriter, r *http.Request) {
 		"totalTokens":     h.totalTokens,
 		"totalCredits":    h.totalCredits,
 		"uptime":          time.Now().Unix() - h.startTime,
+	})
+}
+
+func (h *Handler) apiGetActive(w http.ResponseWriter, r *http.Request) {
+	snapshot := h.snapshotActive()
+	total := 0
+	for _, n := range snapshot {
+		total += n
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"active": snapshot,
+		"total":  total,
 	})
 }
 

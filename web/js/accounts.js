@@ -2,6 +2,38 @@ let accountsData = [];
 let selectedAccounts = new Set();
 let filterKeyword = '';
 let filterStatus = 'all';
+let activeRequestsMap = {};
+
+async function loadActiveRequests() {
+    try {
+        const d = await API.get('/admin/api/active');
+        activeRequestsMap = d.active || {};
+        updateActiveBadges();
+    } catch (e) { /* silent on poll */ }
+}
+
+function updateActiveBadges() {
+    document.querySelectorAll('[data-account-id]').forEach(card => {
+        const id = card.getAttribute('data-account-id');
+        const count = activeRequestsMap[id] || 0;
+        const meta = card.querySelector('.account-meta');
+        if (!meta) return;
+        let badge = meta.querySelector('.badge-calling');
+        if (count > 0) {
+            const label = t('accounts.calling') + (count > 1 ? ' ×' + count : '');
+            if (badge) {
+                badge.textContent = label;
+            } else {
+                badge = document.createElement('span');
+                badge.className = 'badge badge-calling';
+                badge.textContent = label;
+                meta.insertBefore(badge, meta.firstChild);
+            }
+        } else if (badge) {
+            badge.remove();
+        }
+    });
+}
 
 async function loadStats() {
     try {

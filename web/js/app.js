@@ -88,3 +88,7 @@ async function copy(id) {
 setInterval(() => {
     if (!document.getElementById('mainPage').classList.contains('hidden')) loadStats();
 }, 10000);
+
+setInterval(() => {
+    if (!document.getElementById('mainPage').classList.contains('hidden')) loadActiveRequests();
+}, 2000);
