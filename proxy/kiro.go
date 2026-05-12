@@ -43,6 +43,7 @@ var kiroEndpoints = []kiroEndpoint{
 
 // 全局 HTTP 客户端，支持运行时更换（代理重配置）
 var kiroHttpStore atomic.Pointer[http.Client]
+var kiroRestHttpStore atomic.Pointer[http.Client]
 
 func init() {
 	InitKiroHttpClient("")
@@ -63,6 +64,8 @@ func buildKiroTransport(proxyURL string) *http.Transport {
 			// 代理不支持 HTTP/2 协议升级
 			t.ForceAttemptHTTP2 = false
 		}
+	} else {
+		t.Proxy = http.ProxyFromEnvironment
 	}
 	return t
 }
@@ -74,6 +77,12 @@ func InitKiroHttpClient(proxyURL string) {
 		Transport: buildKiroTransport(proxyURL),
 	}
 	kiroHttpStore.Store(client)
+
+	restClient := &http.Client{
+		Timeout:   30 * time.Second,
+		Transport: buildKiroTransport(proxyURL),
+	}
+	kiroRestHttpStore.Store(restClient)
 }
 
 // ==================== 请求结构 ====================
@@ -186,6 +195,17 @@ func getSortedEndpoints(preferred string) []kiroEndpoint {
 func CallKiroAPI(account *config.Account, payload *KiroPayload, callback *KiroStreamCallback) error {
 	if _, err := json.Marshal(payload); err != nil {
 		return err
+	}
+	if payload != nil && strings.TrimSpace(payload.ProfileArn) == "" {
+		if profileArn, err := ResolveProfileArn(account); err == nil {
+			payload.ProfileArn = profileArn
+		} else {
+			accountEmail := "<nil>"
+			if account != nil {
+				accountEmail = account.Email
+			}
+			fmt.Printf("[ProfileArn] Failed to resolve profile ARN for %s: %v\n", accountEmail, err)
+		}
 	}
 
 	// 根据配置排序端点
