@@ -149,7 +149,9 @@ function renderAccounts() {
 }
 
 function renderAccountCard(a) {
-    const usagePercent = (a.usagePercent || 0) * 100;
+    const usageLimit = a.usageLimit || 0;
+    const usageMain = Math.min(a.usageCurrent || 0, usageLimit);
+    const usagePercent = usageLimit > 0 ? Math.min((usageMain / usageLimit) * 100, 100) : 0;
     const usageClass = usagePercent > 90 ? 'critical' : usagePercent > 70 ? 'high' : '';
     const trialUsagePercent = (a.trialUsagePercent || 0) * 100;
     const trialUsageClass = trialUsagePercent > 90 ? 'critical' : trialUsagePercent > 70 ? 'high' : '';
@@ -189,7 +191,7 @@ function renderAccountCard(a) {
         '<button class="btn btn-sm btn-danger" onclick="deleteAccount(\'' + a.id + '\')">' + t('accounts.delete') + '</button>' +
         '</div>' +
         '</div>' +
-        (a.usageLimit > 0 ? '<div class="account-usage"><div class="usage-label">' + t('accounts.mainQuota') + '</div><div class="usage-bar"><div class="usage-fill ' + usageClass + '" style="width:' + usagePercent + '%"></div></div><div class="usage-text"><span>' + (a.usageCurrent?.toFixed(1) || 0) + ' / ' + (a.usageLimit?.toFixed(0) || 0) + '</span><span>' + usagePercent.toFixed(1) + '%</span></div></div>' : '') +
+        (usageLimit > 0 ? '<div class="account-usage"><div class="usage-label">' + t('accounts.mainQuota') + '</div><div class="usage-bar"><div class="usage-fill ' + usageClass + '" style="width:' + usagePercent + '%"></div></div><div class="usage-text"><span>' + usageMain.toFixed(1) + ' / ' + usageLimit.toFixed(0) + '</span><span>' + usagePercent.toFixed(1) + '%</span></div></div>' : '') +
         '<div class="account-usage"><div class="usage-label">' + t('accounts.overageQuota') + '</div><div class="usage-bar"><div class="usage-fill ' + overageClass + '" style="width:' + overagePercent + '%"></div></div><div class="usage-text"><span>' + overageUsed.toFixed(1) + ' / ' + overageCap + '</span><span>' + overagePercent.toFixed(1) + '%</span></div></div>' +
         (a.trialUsageLimit > 0 ? '<div class="account-usage"><div class="usage-label">' + t('accounts.trialQuota') + ' ' + formatTrialExpiry(a.trialExpiresAt) + '</div><div class="usage-bar"><div class="usage-fill ' + trialUsageClass + '" style="width:' + trialUsagePercent + '%"></div></div><div class="usage-text"><span>' + (a.trialUsageCurrent?.toFixed(1) || 0) + ' / ' + (a.trialUsageLimit?.toFixed(0) || 0) + '</span><span>' + trialUsagePercent.toFixed(1) + '%</span></div></div>' : '') +
         '<div class="account-stats">' +
