@@ -6,6 +6,7 @@ import (
 	"io"
 	"kiro-go/auth"
 	"kiro-go/config"
+	"kiro-go/logger"
 	"kiro-go/pool"
 	"net/http"
 	"strings"
@@ -291,9 +292,9 @@ func (h *Handler) refreshAllAccounts() {
 
 		// 检查 token 是否需要刷新
 		if account.ExpiresAt > 0 && time.Now().Unix() > account.ExpiresAt-300 {
-			newAccessToken, newRefreshToken, newExpiresAt, err := auth.RefreshToken(account)
+			newAccessToken, newRefreshToken, newExpiresAt, profileArn, err := auth.RefreshToken(account)
 			if err != nil {
-				fmt.Printf("[BackgroundRefresh] Token refresh failed for %s: %v\n", account.Email, err)
+				logger.Warnf("[BackgroundRefresh] Token refresh failed for %s: %v", account.Email, err)
 				continue
 			}
 			account.AccessToken = newAccessToken
@@ -303,17 +304,21 @@ func (h *Handler) refreshAllAccounts() {
 			account.ExpiresAt = newExpiresAt
 			config.UpdateAccountToken(account.ID, newAccessToken, newRefreshToken, newExpiresAt)
 			h.pool.UpdateToken(account.ID, newAccessToken, newRefreshToken, newExpiresAt)
+			if profileArn != "" {
+				account.ProfileArn = profileArn
+				config.UpdateAccountProfileArn(account.ID, profileArn)
+			}
 		}
 
 		// 刷新账户信息
 		info, err := RefreshAccountInfo(account)
 		if err != nil {
-			fmt.Printf("[BackgroundRefresh] Failed to refresh %s: %v\n", account.Email, err)
+			logger.Warnf("[BackgroundRefresh] Failed to refresh %s: %v", account.Email, err)
 			continue
 		}
 
 		config.UpdateAccountInfo(account.ID, *info)
-		fmt.Printf("[BackgroundRefresh] Refreshed %s: %s %.1f/%.1f\n", account.Email, info.SubscriptionType, info.UsageCurrent, info.UsageLimit)
+		logger.Infof("[BackgroundRefresh] Refreshed %s: %s %.1f/%.1f", account.Email, info.SubscriptionType, info.UsageCurrent, info.UsageLimit)
 	}
 	h.pool.Reload()
 }
@@ -346,6 +351,9 @@ func (h *Handler) validateApiKey(r *http.Request) bool {
 // ServeHTTP 路由分发
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
+
+	// Debug-level request trace for fine-grained visibility
+	logger.Debugf("[HTTP] %s %s from %s", r.Method, path, r.RemoteAddr)
 
 	// CORS - 完整的头部支持
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -565,13 +573,13 @@ func (h *Handler) refreshModelsCache() {
 	for i := range accounts {
 		account := &accounts[i]
 		if err := h.ensureValidToken(account); err != nil {
-			fmt.Printf("[ModelsCache] Skip %s token refresh failed: %v\n", account.Email, err)
+			logger.Warnf("[ModelsCache] Skip %s token refresh failed: %v", account.Email, err)
 			continue
 		}
 
 		models, err := ListAvailableModels(account)
 		if err != nil {
-			fmt.Printf("[ModelsCache] Failed to refresh for %s: %v\n", account.Email, err)
+			logger.Warnf("[ModelsCache] Failed to refresh for %s: %v", account.Email, err)
 			continue
 		}
 		aggregated = mergeUniqueModels(aggregated, models)
@@ -582,7 +590,7 @@ func (h *Handler) refreshModelsCache() {
 		h.cachedModels = aggregated
 		h.modelsCacheTime = time.Now().Unix()
 		h.modelsCacheMu.Unlock()
-		fmt.Printf("[ModelsCache] Cached %d models\n", len(aggregated))
+		logger.Infof("[ModelsCache] Cached %d models", len(aggregated))
 	}
 }
 
@@ -1861,7 +1869,7 @@ func (h *Handler) ensureValidToken(account *config.Account) error {
 		return nil
 	}
 
-	accessToken, refreshToken, expiresAt, err := auth.RefreshToken(account)
+	accessToken, refreshToken, expiresAt, profileArn, err := auth.RefreshToken(account)
 	if err != nil {
 		return err
 	}
@@ -1873,6 +1881,10 @@ func (h *Handler) ensureValidToken(account *config.Account) error {
 		account.RefreshToken = refreshToken
 	}
 	account.ExpiresAt = expiresAt
+	if profileArn != "" {
+		account.ProfileArn = profileArn
+		config.UpdateAccountProfileArn(account.ID, profileArn)
+	}
 
 	// 持久化
 	config.UpdateAccountToken(account.ID, accessToken, refreshToken, expiresAt)
@@ -2178,13 +2190,17 @@ func (h *Handler) apiBatchAccounts(w http.ResponseWriter, r *http.Request) {
 			}
 			// 刷新 token
 			if account.RefreshToken != "" {
-				if newAccess, newRefresh, newExpires, err := auth.RefreshToken(account); err == nil {
+				if newAccess, newRefresh, newExpires, profileArn, err := auth.RefreshToken(account); err == nil {
 					account.AccessToken = newAccess
 					if newRefresh != "" {
 						account.RefreshToken = newRefresh
 					}
 					account.ExpiresAt = newExpires
 					config.UpdateAccountToken(id, newAccess, newRefresh, newExpires)
+					if profileArn != "" {
+						account.ProfileArn = profileArn
+						config.UpdateAccountProfileArn(id, profileArn)
+					}
 					h.pool.UpdateToken(id, newAccess, newRefresh, newExpires)
 				}
 			}
@@ -2523,7 +2539,7 @@ func (h *Handler) apiImportCredentials(w http.ResponseWriter, r *http.Request) {
 		AuthMethod:   req.AuthMethod,
 		Region:       req.Region,
 	}
-	newAccessToken, newRefreshToken, newExpiresAt, err := auth.RefreshToken(tempAccount)
+	newAccessToken, newRefreshToken, newExpiresAt, newProfileArn, err := auth.RefreshToken(tempAccount)
 	if err != nil {
 		// 刷新失败，如果有传入的 accessToken 则尝试使用
 		if req.AccessToken != "" {
@@ -2559,6 +2575,7 @@ func (h *Handler) apiImportCredentials(w http.ResponseWriter, r *http.Request) {
 		ExpiresAt:    expiresAt,
 		Enabled:      true,
 		MachineId:    config.GenerateMachineId(),
+		ProfileArn:   newProfileArn,
 	}
 
 	if err := config.AddAccount(account); err != nil {
@@ -2683,7 +2700,7 @@ func (h *Handler) apiRefreshAccount(w http.ResponseWriter, r *http.Request, id s
 		if account.RefreshToken == "" {
 			return nil
 		}
-		newAccessToken, newRefreshToken, newExpiresAt, err := auth.RefreshToken(account)
+		newAccessToken, newRefreshToken, newExpiresAt, profileArn, err := auth.RefreshToken(account)
 		if err != nil {
 			return err
 		}
@@ -2694,6 +2711,10 @@ func (h *Handler) apiRefreshAccount(w http.ResponseWriter, r *http.Request, id s
 		account.ExpiresAt = newExpiresAt
 		config.UpdateAccountToken(id, newAccessToken, newRefreshToken, newExpiresAt)
 		h.pool.UpdateToken(id, newAccessToken, newRefreshToken, newExpiresAt)
+		if profileArn != "" {
+			account.ProfileArn = profileArn
+			config.UpdateAccountProfileArn(id, profileArn)
+		}
 		return nil
 	}
 
@@ -2918,8 +2939,9 @@ func (h *Handler) apiUpdateThinkingConfig(w http.ResponseWriter, r *http.Request
 
 // apiGetEndpointConfig 获取端点配置
 func (h *Handler) apiGetEndpointConfig(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{
+	json.NewEncoder(w).Encode(map[string]interface{}{
 		"preferredEndpoint": config.GetPreferredEndpoint(),
+		"endpointFallback":  config.GetEndpointFallback(),
 	})
 }
 
@@ -2927,6 +2949,7 @@ func (h *Handler) apiGetEndpointConfig(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) apiUpdateEndpointConfig(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		PreferredEndpoint string `json:"preferredEndpoint"`
+		EndpointFallback  *bool  `json:"endpointFallback"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.WriteHeader(400)
@@ -2934,10 +2957,10 @@ func (h *Handler) apiUpdateEndpointConfig(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	valid := map[string]bool{"auto": true, "codewhisperer": true, "amazonq": true}
+	valid := map[string]bool{"auto": true, "kiro": true, "codewhisperer": true, "amazonq": true}
 	if !valid[req.PreferredEndpoint] {
 		w.WriteHeader(400)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid endpoint, must be: auto, codewhisperer, or amazonq"})
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid endpoint, must be: auto, kiro, codewhisperer, or amazonq"})
 		return
 	}
 
@@ -2945,6 +2968,10 @@ func (h *Handler) apiUpdateEndpointConfig(w http.ResponseWriter, r *http.Request
 		w.WriteHeader(500)
 		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
+	}
+
+	if req.EndpointFallback != nil {
+		config.UpdateEndpointFallback(*req.EndpointFallback)
 	}
 
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})

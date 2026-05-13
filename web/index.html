@@ -180,10 +180,18 @@
                     <label data-i18n="settings.preferredEndpoint"></label>
                     <select id="preferredEndpoint">
                         <option value="auto" data-i18n="settings.endpointAuto"></option>
+                        <option value="kiro">Kiro IDE</option>
                         <option value="codewhisperer">CodeWhisperer</option>
                         <option value="amazonq">AmazonQ</option>
                     </select>
                     <small class="hint-small" data-i18n="settings.endpointHint"></small>
+                </div>
+                <div class="form-group">
+                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                        <input type="checkbox" id="endpointFallback" checked>
+                        <span data-i18n="settings.endpointFallback"></span>
+                    </label>
+                    <small class="hint-small" data-i18n="settings.endpointFallbackHint"></small>
                 </div>
                 <button class="btn btn-primary" onclick="saveEndpointConfig(this)" data-i18n="settings.saveEndpoint"></button>
             </div>
