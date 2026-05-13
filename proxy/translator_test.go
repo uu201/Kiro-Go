@@ -146,7 +146,7 @@ func TestOpenAIToKiroAssistantToolCallsDoNotInjectPlaceholder(t *testing.T) {
 	}
 }
 
-func TestOpenAIConversationIDStableFromAnchor(t *testing.T) {
+func TestOpenAIConversationIDUniquePerRequest(t *testing.T) {
 	baseMessages := []OpenAIMessage{
 		{Role: "system", Content: "You are helpful"},
 		{Role: "user", Content: "Build calculator"},
@@ -155,7 +155,7 @@ func TestOpenAIConversationIDStableFromAnchor(t *testing.T) {
 	}
 
 	reqA := &OpenAIRequest{Model: "claude-sonnet-4.5", Messages: baseMessages}
-	reqB := &OpenAIRequest{Model: "claude-sonnet-4.5", Messages: append(baseMessages, OpenAIMessage{Role: "assistant", Content: "Next step"})}
+	reqB := &OpenAIRequest{Model: "claude-sonnet-4.5", Messages: baseMessages}
 
 	payloadA := OpenAIToKiro(reqA, false)
 	payloadB := OpenAIToKiro(reqB, false)
@@ -163,12 +163,12 @@ func TestOpenAIConversationIDStableFromAnchor(t *testing.T) {
 	if payloadA.ConversationState.ConversationID == "" || payloadB.ConversationState.ConversationID == "" {
 		t.Fatalf("expected non-empty conversation IDs")
 	}
-	if payloadA.ConversationState.ConversationID != payloadB.ConversationState.ConversationID {
-		t.Fatalf("expected stable conversation ID across turns, got %q vs %q", payloadA.ConversationState.ConversationID, payloadB.ConversationState.ConversationID)
+	if payloadA.ConversationState.ConversationID == payloadB.ConversationState.ConversationID {
+		t.Fatalf("expected unique conversation IDs per request, got same: %q", payloadA.ConversationState.ConversationID)
 	}
 }
 
-func TestClaudeConversationIDStableFromAnchor(t *testing.T) {
+func TestClaudeConversationIDUniquePerRequest(t *testing.T) {
 	reqA := &ClaudeRequest{
 		Model:  "claude-sonnet-4.5",
 		System: "sys",
@@ -181,8 +181,6 @@ func TestClaudeConversationIDStableFromAnchor(t *testing.T) {
 		System: "sys",
 		Messages: []ClaudeMessage{
 			{Role: "user", Content: "hello"},
-			{Role: "assistant", Content: "ok"},
-			{Role: "user", Content: "next"},
 		},
 	}
 
@@ -192,8 +190,8 @@ func TestClaudeConversationIDStableFromAnchor(t *testing.T) {
 	if payloadA.ConversationState.ConversationID == "" || payloadB.ConversationState.ConversationID == "" {
 		t.Fatalf("expected non-empty conversation IDs")
 	}
-	if payloadA.ConversationState.ConversationID != payloadB.ConversationState.ConversationID {
-		t.Fatalf("expected stable conversation ID across turns, got %q vs %q", payloadA.ConversationState.ConversationID, payloadB.ConversationState.ConversationID)
+	if payloadA.ConversationState.ConversationID == payloadB.ConversationState.ConversationID {
+		t.Fatalf("expected unique conversation IDs per request, got same: %q", payloadA.ConversationState.ConversationID)
 	}
 }
 

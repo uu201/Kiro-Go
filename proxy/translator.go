@@ -252,7 +252,7 @@ func ClaudeToKiro(req *ClaudeRequest, thinking bool) *KiroPayload {
 	payload.ConversationState.ChatTriggerType = "MANUAL"
 	payload.ConversationState.AgentTaskType = "vibe"
 	payload.ConversationState.AgentContinuationId = uuid.New().String()
-	payload.ConversationState.ConversationID = buildConversationID(modelID, systemPrompt, firstClaudeConversationAnchor(req.Messages))
+	payload.ConversationState.ConversationID = uuid.New().String()
 	payload.ConversationState.CurrentMessage.UserInputMessage = KiroUserInputMessage{
 		Content: finalContent,
 		ModelID: modelID,
@@ -890,7 +890,7 @@ func OpenAIToKiro(req *OpenAIRequest, thinking bool) *KiroPayload {
 	// 构建 payload
 	payload := &KiroPayload{}
 	payload.ConversationState.ChatTriggerType = "MANUAL"
-	payload.ConversationState.ConversationID = buildConversationID(modelID, systemPrompt, firstOpenAIConversationAnchor(nonSystemMessages))
+	payload.ConversationState.ConversationID = uuid.New().String()
 	payload.ConversationState.CurrentMessage.UserInputMessage = KiroUserInputMessage{
 		Content: finalContent,
 		ModelID: modelID,
@@ -1048,59 +1048,6 @@ func trimLeadingAssistantHistory(history []KiroHistoryMessage) []KiroHistoryMess
 	return history[idx:]
 }
 
-func firstClaudeConversationAnchor(messages []ClaudeMessage) string {
-	for _, msg := range messages {
-		if msg.Role != "user" {
-			continue
-		}
-		text, _, toolResults := extractClaudeUserContent(msg.Content)
-		if strings.TrimSpace(text) != "" {
-			return strings.TrimSpace(text)
-		}
-		if len(toolResults) > 0 {
-			continue
-		}
-	}
-
-	return ""
-}
-
-func firstOpenAIConversationAnchor(messages []OpenAIMessage) string {
-	for _, msg := range messages {
-		if msg.Role != "user" {
-			continue
-		}
-		text := extractOpenAIMessageText(msg.Content)
-		if strings.TrimSpace(text) != "" {
-			return strings.TrimSpace(text)
-		}
-	}
-
-	return ""
-}
-
-func buildConversationID(modelID, systemPrompt, anchor string) string {
-	anchor = strings.TrimSpace(anchor)
-	if isSyntheticConversationAnchor(anchor) {
-		return uuid.New().String()
-	}
-	seed := strings.Join([]string{modelID, strings.TrimSpace(systemPrompt), anchor}, "\n")
-	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(seed)).String()
-}
-
-func isSyntheticConversationAnchor(anchor string) bool {
-	if strings.TrimSpace(anchor) == "" {
-		return true
-	}
-
-	normalized := strings.ToLower(strings.Join(strings.Fields(anchor), " "))
-	switch normalized {
-	case ".", "begin conversation", "please analyze the attached image.", strings.ToLower(minimalFallbackUserContent):
-		return true
-	default:
-		return false
-	}
-}
 
 func extractOpenAITextPart(part map[string]interface{}) (string, bool) {
 	partType, _ := part["type"].(string)

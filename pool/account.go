@@ -64,6 +64,7 @@ func (p *AccountPool) Reload() {
 }
 
 // GetNext 获取下一个可用账号（加权轮询）
+// 返回账号的独立副本，避免并发请求间的数据竞争
 func (p *AccountPool) GetNext() *config.Account {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -103,7 +104,8 @@ func (p *AccountPool) GetNext() *config.Account {
 			continue
 		}
 
-		return acc
+		copy := *acc
+		return &copy
 	}
 
 	// 无可用账号，返回冷却时间最短的（排除额度用尽且不允许超额的）
@@ -120,19 +122,25 @@ func (p *AccountPool) GetNext() *config.Account {
 				earliest = cooldown
 			}
 		} else {
-			return acc
+			best = acc
+			break
 		}
 	}
-	return best
+	if best != nil {
+		copy := *best
+		return &copy
+	}
+	return nil
 }
 
-// GetByID 根据 ID 获取账号
+// GetByID 根据 ID 获取账号（返回副本）
 func (p *AccountPool) GetByID(id string) *config.Account {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	for i := range p.accounts {
 		if p.accounts[i].ID == id {
-			return &p.accounts[i]
+			copy := p.accounts[i]
+			return &copy
 		}
 	}
 	return nil
