@@ -79,9 +79,10 @@ func buildKiroTransport(proxyURL string) *http.Transport {
 
 // InitKiroHttpClient initializes (or reinitializes) the HTTP clients used for Kiro API requests.
 func InitKiroHttpClient(proxyURL string) {
+	streamTransport := buildKiroTransport(proxyURL)
+	streamTransport.ResponseHeaderTimeout = 60 * time.Second
 	client := &http.Client{
-		Timeout:   5 * time.Minute,
-		Transport: buildKiroTransport(proxyURL),
+		Transport: streamTransport,
 	}
 	kiroHttpStore.Store(client)
 
