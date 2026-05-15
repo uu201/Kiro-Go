@@ -38,6 +38,8 @@ type Handler struct {
 	// 每账号正在进行的请求数
 	activeRequests map[string]int
 	activeMu       sync.RWMutex
+	// Token 刷新互斥锁，防止并发刷新同一账号
+	tokenRefreshMu sync.Mutex
 }
 
 type thinkingStreamSource int
@@ -1867,6 +1869,20 @@ func (h *Handler) sendOpenAIError(w http.ResponseWriter, status int, errType, me
 func (h *Handler) ensureValidToken(account *config.Account) error {
 	if account.ExpiresAt == 0 || time.Now().Unix() < account.ExpiresAt-300 {
 		return nil
+	}
+
+	h.tokenRefreshMu.Lock()
+	defer h.tokenRefreshMu.Unlock()
+
+	// 等待锁期间可能已被其他请求刷新
+	if latest := h.pool.GetByID(account.ID); latest != nil {
+		account.AccessToken = latest.AccessToken
+		account.RefreshToken = latest.RefreshToken
+		account.ExpiresAt = latest.ExpiresAt
+		account.ProfileArn = latest.ProfileArn
+		if account.ExpiresAt == 0 || time.Now().Unix() < account.ExpiresAt-300 {
+			return nil
+		}
 	}
 
 	accessToken, refreshToken, expiresAt, profileArn, err := auth.RefreshToken(account)
