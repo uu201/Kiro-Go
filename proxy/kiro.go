@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -52,8 +53,49 @@ var kiroEndpoints = []kiroEndpoint{
 var kiroHttpStore atomic.Pointer[http.Client]
 var kiroRestHttpStore atomic.Pointer[http.Client]
 
+var proxyClientCache sync.Map
+
 func init() {
 	InitKiroHttpClient("")
+}
+
+func GetClientForProxy(proxyURL string) *http.Client {
+	if proxyURL == "" {
+		return kiroHttpStore.Load()
+	}
+	if cached, ok := proxyClientCache.Load(proxyURL); ok {
+		return cached.(*http.Client)
+	}
+	streamTransport := buildKiroTransport(proxyURL)
+	streamTransport.ResponseHeaderTimeout = 60 * time.Second
+	client := &http.Client{
+		Transport: streamTransport,
+	}
+	proxyClientCache.Store(proxyURL, client)
+	return client
+}
+
+func GetRestClientForProxy(proxyURL string) *http.Client {
+	if proxyURL == "" {
+		return kiroRestHttpStore.Load()
+	}
+	cacheKey := "rest:" + proxyURL
+	if cached, ok := proxyClientCache.Load(cacheKey); ok {
+		return cached.(*http.Client)
+	}
+	client := &http.Client{
+		Timeout:   30 * time.Second,
+		Transport: buildKiroTransport(proxyURL),
+	}
+	proxyClientCache.Store(cacheKey, client)
+	return client
+}
+
+func ResolveAccountProxyURL(account *config.Account) string {
+	if account != nil && account.ProxyURL != "" {
+		return account.ProxyURL
+	}
+	return config.GetProxyURL()
 }
 
 // buildKiroTransport constructs an HTTP Transport with optional outbound proxy support.
@@ -296,7 +338,7 @@ func CallKiroAPI(account *config.Account, payload *KiroPayload, callback *KiroSt
 		req.Header.Set("Amz-Sdk-Request", "attempt=1; max=3")
 		req.Header.Set("Amz-Sdk-Invocation-Id", uuid.New().String())
 
-		resp, err := kiroHttpStore.Load().Do(req)
+		resp, err := GetClientForProxy(ResolveAccountProxyURL(account)).Do(req)
 		if err != nil {
 			lastErr = err
 			logger.Warnf("[KiroAPI] Endpoint %s failed: %v", ep.Name, err)

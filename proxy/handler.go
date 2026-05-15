@@ -2040,6 +2040,7 @@ func (h *Handler) apiGetAccounts(w http.ResponseWriter, r *http.Request) {
 			"machineId":         a.MachineId,
 			"weight":            a.Weight,
 			"allowOverage":      a.AllowOverage,
+			"proxyURL":          a.ProxyURL,
 			"subscriptionType":  a.SubscriptionType,
 			"subscriptionTitle": a.SubscriptionTitle,
 			"daysRemaining":     a.DaysRemaining,
@@ -2137,6 +2138,9 @@ func (h *Handler) apiUpdateAccount(w http.ResponseWriter, r *http.Request, id st
 	}
 	if v, ok := updates["weight"].(float64); ok {
 		existing.Weight = int(v)
+	}
+	if v, ok := updates["proxyURL"].(string); ok {
+		existing.ProxyURL = v
 	}
 
 	if err := config.UpdateAccount(id, *existing); err != nil {
@@ -2840,6 +2844,9 @@ func (h *Handler) apiGetAccountFull(w http.ResponseWriter, r *http.Request, id s
 		"region":            account.Region,
 		"expiresAt":         account.ExpiresAt,
 		"machineId":         account.MachineId,
+		"weight":            account.Weight,
+		"allowOverage":      account.AllowOverage,
+		"proxyURL":          account.ProxyURL,
 		"enabled":           account.Enabled,
 		"banStatus":         account.BanStatus,
 		"banReason":         account.BanReason,
