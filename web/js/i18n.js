@@ -231,7 +231,13 @@ const I18N = {
         'detail.weight': '请求权重',
         'detail.weightHint': '0-1=普通, 2+=高优先级',
         'detail.allowOverage': '允许超额使用',
-        'detail.allowOverageHint': '状态从 Kiro 平台同步，刷新账号信息时自动更新'
+        'detail.allowOverageHint': '状态从 Kiro 平台同步，刷新账号信息时自动更新',
+        'detail.proxyURL': '独立代理',
+        'detail.proxyHint': '留空则使用全局代理，支持 socks5:// http:// https://',
+        'detail.proxyFormatError': '代理格式错误，需以 socks5:// http:// 或 https:// 开头',
+        'detail.test': '测试',
+        'detail.testSuccess': '连接成功',
+        'detail.testFailed': '连接失败'
     },
     en: {
         'login.subtitle': 'Enter admin password to login',
@@ -465,7 +471,13 @@ const I18N = {
         'detail.weight': 'Request Weight',
         'detail.weightHint': '0-1=normal, 2+=higher priority',
         'detail.allowOverage': 'Allow Overages',
-        'detail.allowOverageHint': 'Synced from Kiro platform, auto-updated on account refresh'
+        'detail.allowOverageHint': 'Synced from Kiro platform, auto-updated on account refresh',
+        'detail.proxyURL': 'Account Proxy',
+        'detail.proxyHint': 'Leave empty to use global proxy. Supports socks5:// http:// https://',
+        'detail.proxyFormatError': 'Invalid proxy format, must start with socks5:// http:// or https://',
+        'detail.test': 'Test',
+        'detail.testSuccess': 'Connection OK',
+        'detail.testFailed': 'Connection failed'
     }
 };
 

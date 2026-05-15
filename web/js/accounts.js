@@ -353,6 +353,11 @@ async function showDetail(id) {
         '<div class="detail-section"><h4>' + t('detail.allowOverage') + '</h4><div class="machine-id-row">' +
         '<label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="allowOverageInput" ' + (a.allowOverage ? 'checked' : '') + ' disabled> <span style="color:#64748b;font-size:12px">' + t('detail.allowOverageHint') + '</span></label>' +
         '</div></div>' +
+        '<div class="detail-section"><h4>' + t('detail.proxyURL') + '</h4><div class="machine-id-row">' +
+        '<input type="text" id="proxyURLInput" value="' + escapeHtml(a.proxyURL || '') + '" placeholder="socks5://host:port" style="flex:1">' +
+        '<button class="btn btn-sm btn-primary" onclick="saveProxyURL(\'' + id + '\', this)">' + t('common.saved') + '</button>' +
+        '<button class="btn btn-sm btn-secondary" onclick="testAccount(\'' + id + '\', this)">' + t('detail.test') + '</button>' +
+        '</div><div style="color:#64748b;font-size:12px;margin-top:4px">' + t('detail.proxyHint') + '</div></div>' +
         '<div class="detail-section"><h4>' + t('detail.subscription') + '</h4><div class="detail-grid">' +
         '<div class="detail-item"><div class="detail-label">' + t('detail.subscriptionType') + '</div><div class="detail-value">' + escapeHtml(a.subscriptionTitle || a.subscriptionType || '-') + '</div></div>' +
         '<div class="detail-item"><div class="detail-label">' + t('detail.tokenExpiry') + '</div><div class="detail-value">' + (a.expiresAt ? new Date(a.expiresAt * 1000).toLocaleString() : '-') + '</div></div>' +
@@ -440,6 +445,38 @@ async function saveWeight(id, btn) {
         else UI.toastError(t('detail.saveFailed') + ': ' + (d.error || ''));
     } catch (e) {
         UI.toastError(t('detail.saveFailed'));
+    }
+    UI.setLoading(btn, false);
+}
+
+async function saveProxyURL(id, btn) {
+    const proxyURL = document.getElementById('proxyURLInput').value.trim();
+    if (proxyURL && !proxyURL.match(/^(socks5h?|https?):\/\//)) {
+        UI.toastError(t('detail.proxyFormatError'));
+        return;
+    }
+    UI.setLoading(btn, true);
+    try {
+        const d = await API.put('/admin/api/accounts/' + id, { proxyURL });
+        if (d.success) { UI.toastSuccess(t('detail.saved')); loadAccounts(); }
+        else UI.toastError(t('detail.saveFailed') + ': ' + (d.error || ''));
+    } catch (e) {
+        UI.toastError(t('detail.saveFailed'));
+    }
+    UI.setLoading(btn, false);
+}
+
+async function testAccount(id, btn) {
+    UI.setLoading(btn, true);
+    try {
+        const d = await API.post('/admin/api/accounts/' + id + '/test');
+        if (d.success) {
+            UI.toastSuccess(t('detail.testSuccess') + ': ' + (d.email || d.status || 'OK'));
+        } else {
+            UI.toastError(t('detail.testFailed') + ': ' + (d.error || ''));
+        }
+    } catch (e) {
+        UI.toastError(t('detail.testFailed') + ': ' + (e.message || ''));
     }
     UI.setLoading(btn, false);
 }
