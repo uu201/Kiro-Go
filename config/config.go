@@ -297,6 +297,18 @@ func UpdateAccount(id string, account Account) error {
 	return nil
 }
 
+func DisableAccountOverage(id string) error {
+	cfgLock.Lock()
+	defer cfgLock.Unlock()
+	for i, a := range cfg.Accounts {
+		if a.ID == id {
+			cfg.Accounts[i].AllowOverage = false
+			return Save()
+		}
+	}
+	return nil
+}
+
 func UpdateAccountProfileArn(id, profileArn string) error {
 	cfgLock.Lock()
 	defer cfgLock.Unlock()

@@ -1130,6 +1130,7 @@ func (h *Handler) handleClaudeStream(w http.ResponseWriter, account *config.Acco
 	if err != nil {
 		h.recordFailure()
 		h.pool.RecordError(account.ID, strings.Contains(err.Error(), "429") || strings.Contains(err.Error(), "quota"), err.Error())
+		h.checkOverageError(err, account.ID)
 		h.sendSSE(w, flusher, "error", map[string]interface{}{
 			"type":  "error",
 			"error": map[string]string{"type": "api_error", "message": err.Error()},
@@ -1244,6 +1245,18 @@ func (h *Handler) recordFailure() {
 	atomic.AddInt64(&h.failedRequests, 1)
 }
 
+func (h *Handler) checkOverageError(err error, accountID string) {
+	if err == nil {
+		return
+	}
+	errMsg := err.Error()
+	if strings.Contains(errMsg, "402") && strings.Contains(errMsg, "OVERAGE") {
+		logger.Warnf("[Overage] Detected overage limit error for account %s, disabling AllowOverage", accountID)
+		config.DisableAccountOverage(accountID)
+		h.pool.Reload()
+	}
+}
+
 // handleClaudeNonStream Claude 非流式响应
 func (h *Handler) handleClaudeNonStream(w http.ResponseWriter, account *config.Account, payload *KiroPayload, model string, thinking bool, thinkingOpts claudeThinkingResponseOptions, estimatedInputTokens int, cacheUsage promptCacheUsage, cacheProfile *promptCacheProfile) {
 	h.incrementActive(account.ID)
@@ -1286,6 +1299,7 @@ func (h *Handler) handleClaudeNonStream(w http.ResponseWriter, account *config.A
 	if err != nil {
 		h.recordFailure()
 		h.pool.RecordError(account.ID, strings.Contains(err.Error(), "429"), err.Error())
+		h.checkOverageError(err, account.ID)
 		h.sendClaudeError(w, 500, "api_error", err.Error())
 		return
 	}
@@ -1731,6 +1745,7 @@ func (h *Handler) handleOpenAIStream(w http.ResponseWriter, account *config.Acco
 	if err != nil {
 		h.recordFailure()
 		h.pool.RecordError(account.ID, strings.Contains(err.Error(), "429"), err.Error())
+		h.checkOverageError(err, account.ID)
 		return
 	}
 
@@ -1825,6 +1840,7 @@ func (h *Handler) handleOpenAINonStream(w http.ResponseWriter, account *config.A
 	if err != nil {
 		h.recordFailure()
 		h.pool.RecordError(account.ID, strings.Contains(err.Error(), "429"), err.Error())
+		h.checkOverageError(err, account.ID)
 		h.sendOpenAIError(w, 500, "server_error", err.Error())
 		return
 	}
