@@ -237,7 +237,11 @@ const I18N = {
         'detail.proxyFormatError': '代理格式错误，需以 socks5:// http:// 或 https:// 开头',
         'detail.test': '测试',
         'detail.testSuccess': '连接成功',
-        'detail.testFailed': '连接失败'
+        'detail.testFailed': '连接失败',
+        'settings.endpointFallback': '启用端点回退',
+        'settings.endpointFallbackHint': '当首选端点不可用时自动尝试其他端点',
+        'models.refreshAll': '刷新模型',
+        'models.refreshDone': '模型列表已刷新'
     },
     en: {
         'login.subtitle': 'Enter admin password to login',

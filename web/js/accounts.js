@@ -481,6 +481,19 @@ async function testAccount(id, btn) {
     UI.setLoading(btn, false);
 }
 
+async function refreshAllModels() {
+    try {
+        const d = await API.post('/admin/api/accounts/models/refresh');
+        if (d.success) {
+            UI.toastSuccess(t('models.refreshDone'));
+        } else {
+            UI.toastError(t('common.failed') + ': ' + (d.error || ''));
+        }
+    } catch (e) {
+        UI.toastError(t('common.failed'));
+    }
+}
+
 async function autoRefreshNewAccount(accountId) {
     if (!accountId) return;
     try {

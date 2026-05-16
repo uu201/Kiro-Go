@@ -89,14 +89,18 @@ async function loadEndpointConfig() {
     try {
         const d = await API.get('/admin/api/endpoint');
         document.getElementById('preferredEndpoint').value = d.preferredEndpoint || 'auto';
+        const fb = document.getElementById('endpointFallback');
+        if (fb) fb.checked = d.endpointFallback !== false;
     } catch (e) { /* silent */ }
 }
 
 async function saveEndpointConfig(btn) {
     await UI.withLoading(btn, async () => {
         try {
+            const fb = document.getElementById('endpointFallback');
             const d = await API.post('/admin/api/endpoint', {
-                preferredEndpoint: document.getElementById('preferredEndpoint').value
+                preferredEndpoint: document.getElementById('preferredEndpoint').value,
+                endpointFallback: fb ? fb.checked : true
             });
             if (d.success) UI.toastSuccess(t('settings.endpointSaved'));
             else UI.toastError(t('common.saveFailed') + ': ' + (d.error || ''));
