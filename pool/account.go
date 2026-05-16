@@ -4,6 +4,7 @@ package pool
 
 import (
 	"kiro-go/config"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -16,14 +17,19 @@ type LastError struct {
 	IsQuota bool   `json:"isQuota"`
 }
 
+const overageFrequencyScale = 10
+const tokenRefreshSkewSeconds int64 = 120
+
 // AccountPool 账号池
 type AccountPool struct {
-	mu           sync.RWMutex
-	accounts     []config.Account
-	currentIndex uint64
-	cooldowns    map[string]time.Time // 账号冷却时间
-	errorCounts  map[string]int       // 连续错误计数
-	lastErrors   map[string]LastError // 最近一次错误
+	mu            sync.RWMutex
+	accounts      []config.Account
+	totalAccounts int
+	currentIndex  uint64
+	cooldowns     map[string]time.Time       // 账号冷却时间
+	errorCounts   map[string]int             // 连续错误计数
+	lastErrors    map[string]LastError       // 最近一次错误
+	modelLists    map[string]map[string]bool // accountID → set of modelIDs (from ListAvailableModels)
 }
 
 var (
@@ -38,6 +44,7 @@ func GetPool() *AccountPool {
 			cooldowns:   make(map[string]time.Time),
 			errorCounts: make(map[string]int),
 			lastErrors:  make(map[string]LastError),
+			modelLists:  make(map[string]map[string]bool),
 		}
 		pool.Reload()
 	})
@@ -52,15 +59,19 @@ func (p *AccountPool) Reload() {
 	enabled := config.GetEnabledAccounts()
 	var weighted []config.Account
 	for _, a := range enabled {
-		w := a.Weight
-		if w < 1 {
-			w = 1
+		w := effectiveWeight(a.Weight) * overageFrequencyScale
+		if isOverUsageLimit(a) {
+			if !a.AllowOverage {
+				continue
+			}
+			w = effectiveOverageWeight(a.OverageWeight)
 		}
 		for j := 0; j < w; j++ {
 			weighted = append(weighted, a)
 		}
 	}
 	p.accounts = weighted
+	p.totalAccounts = len(enabled)
 }
 
 // GetNext 获取下一个可用账号（加权轮询）
@@ -73,6 +84,7 @@ func (p *AccountPool) GetNext() *config.Account {
 		return nil
 	}
 
+	allowOverUsage := config.GetAllowOverUsage()
 	now := time.Now()
 	n := len(p.accounts)
 	seen := make(map[string]bool)
@@ -93,13 +105,13 @@ func (p *AccountPool) GetNext() *config.Account {
 		}
 
 		// 跳过即将过期的 Token
-		if acc.ExpiresAt > 0 && time.Now().Unix() > acc.ExpiresAt-300 {
+		if acc.ExpiresAt > 0 && time.Now().Unix() > acc.ExpiresAt-tokenRefreshSkewSeconds {
 			seen[acc.ID] = true
 			continue
 		}
 
-		// 跳过额度已用尽的账号（允许超额的账号除外）
-		if acc.UsageLimit > 0 && acc.UsageCurrent >= acc.UsageLimit && !acc.AllowOverage {
+		// 跳过额度已用尽的账号（账号级 AllowOverage 或全局 AllowOverUsage 可放行）
+		if isOverUsageLimit(*acc) && !acc.AllowOverage && !allowOverUsage {
 			seen[acc.ID] = true
 			continue
 		}
@@ -108,12 +120,120 @@ func (p *AccountPool) GetNext() *config.Account {
 		return &copy
 	}
 
-	// 无可用账号，返回冷却时间最短的（排除额度用尽且不允许超额的）
+	// 无可用账号，返回冷却时间最短的（排除额度用尽的，除非允许超额）
 	var best *config.Account
 	var earliest time.Time
 	for i := range p.accounts {
 		acc := &p.accounts[i]
-		if acc.UsageLimit > 0 && acc.UsageCurrent >= acc.UsageLimit && !acc.AllowOverage {
+		if isOverUsageLimit(*acc) && !acc.AllowOverage && !allowOverUsage {
+			continue
+		}
+		if cooldown, ok := p.cooldowns[acc.ID]; ok {
+			if best == nil || cooldown.Before(earliest) {
+				best = acc
+				earliest = cooldown
+			}
+		} else {
+			best = acc
+			break
+		}
+	}
+	if best != nil {
+		copy := *best
+		return &copy
+	}
+	return nil
+}
+
+// SetModelList 缓存账号支持的模型集合（由 handler 在刷新后调用）
+func (p *AccountPool) SetModelList(accountID string, modelIDs []string) {
+	set := make(map[string]bool, len(modelIDs))
+	for _, id := range modelIDs {
+		set[strings.ToLower(strings.TrimSpace(id))] = true
+	}
+	p.mu.Lock()
+	p.modelLists[accountID] = set
+	p.mu.Unlock()
+}
+
+// GetModelList 返回该账号缓存的模型 ID 列表（供 admin API 使用）。
+// 若尚无缓存则返回空切片。
+func (p *AccountPool) GetModelList(accountID string) []string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	set, ok := p.modelLists[accountID]
+	if !ok || len(set) == 0 {
+		return []string{}
+	}
+	ids := make([]string, 0, len(set))
+	for id := range set {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+// accountHasModel 检查账号是否支持指定模型。
+// 若该账号尚无模型列表（冷启动），视为支持所有模型。
+func (p *AccountPool) accountHasModel(accountID, model string) bool {
+	list, ok := p.modelLists[accountID]
+	if !ok || len(list) == 0 {
+		return true // 冷启动：列表未就绪，乐观放行
+	}
+	return list[strings.ToLower(strings.TrimSpace(model))]
+}
+
+// GetNextForModel 获取下一个支持指定模型的可用账号。
+// model 应为去掉 thinking 后缀的实际模型名。
+// 若无账号有该模型列表数据，行为与 GetNext 相同（乐观路由）。
+func (p *AccountPool) GetNextForModel(model string) *config.Account {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	if len(p.accounts) == 0 {
+		return nil
+	}
+
+	allowOverUsage := config.GetAllowOverUsage()
+	now := time.Now()
+	n := len(p.accounts)
+	seen := make(map[string]bool)
+
+	for i := 0; i < n; i++ {
+		idx := atomic.AddUint64(&p.currentIndex, 1) % uint64(n)
+		acc := &p.accounts[idx]
+
+		if seen[acc.ID] {
+			continue
+		}
+		if !p.accountHasModel(acc.ID, model) {
+			seen[acc.ID] = true
+			continue
+		}
+		if cooldown, ok := p.cooldowns[acc.ID]; ok && now.Before(cooldown) {
+			seen[acc.ID] = true
+			continue
+		}
+		if acc.ExpiresAt > 0 && time.Now().Unix() > acc.ExpiresAt-tokenRefreshSkewSeconds {
+			seen[acc.ID] = true
+			continue
+		}
+		if isOverUsageLimit(*acc) && !acc.AllowOverage && !allowOverUsage {
+			seen[acc.ID] = true
+			continue
+		}
+		copy := *acc
+		return &copy
+	}
+
+	// fallback：找冷却时间最短且支持该模型的账号
+	var best *config.Account
+	var earliest time.Time
+	for i := range p.accounts {
+		acc := &p.accounts[i]
+		if !p.accountHasModel(acc.ID, model) {
+			continue
+		}
+		if isOverUsageLimit(*acc) && !acc.AllowOverage && !allowOverUsage {
 			continue
 		}
 		if cooldown, ok := p.cooldowns[acc.ID]; ok {
@@ -211,7 +331,6 @@ func (p *AccountPool) UpdateToken(id, accessToken, refreshToken string, expiresA
 				p.accounts[i].RefreshToken = refreshToken
 			}
 			p.accounts[i].ExpiresAt = expiresAt
-			break
 		}
 	}
 }
@@ -220,7 +339,15 @@ func (p *AccountPool) UpdateToken(id, accessToken, refreshToken string, expiresA
 func (p *AccountPool) Count() int {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return len(p.accounts)
+	if p.totalAccounts > 0 {
+		return p.totalAccounts
+	}
+
+	seen := make(map[string]bool)
+	for _, acc := range p.accounts {
+		seen[acc.ID] = true
+	}
+	return len(seen)
 }
 
 // AvailableCount 返回可用账号数
@@ -229,7 +356,12 @@ func (p *AccountPool) AvailableCount() int {
 	defer p.mu.RUnlock()
 	now := time.Now()
 	count := 0
+	seen := make(map[string]bool)
 	for _, acc := range p.accounts {
+		if seen[acc.ID] {
+			continue
+		}
+		seen[acc.ID] = true
 		if cooldown, ok := p.cooldowns[acc.ID]; ok && now.Before(cooldown) {
 			continue
 		}
@@ -242,15 +374,35 @@ func (p *AccountPool) AvailableCount() int {
 func (p *AccountPool) UpdateStats(id string, tokens int, credits float64) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	var updated bool
+	var requestCount, errorCount, totalTokens int
+	var totalCredits float64
+	var lastUsed int64
 	for i := range p.accounts {
 		if p.accounts[i].ID == id {
-			p.accounts[i].RequestCount++
-			p.accounts[i].TotalTokens += tokens
-			p.accounts[i].TotalCredits += credits
-			p.accounts[i].LastUsed = time.Now().Unix()
-			go config.UpdateAccountStats(id, p.accounts[i].RequestCount, p.accounts[i].ErrorCount, p.accounts[i].TotalTokens, p.accounts[i].TotalCredits, p.accounts[i].LastUsed)
-			break
+			if !updated {
+				p.accounts[i].RequestCount++
+				p.accounts[i].TotalTokens += tokens
+				p.accounts[i].TotalCredits += credits
+				p.accounts[i].LastUsed = time.Now().Unix()
+
+				requestCount = p.accounts[i].RequestCount
+				errorCount = p.accounts[i].ErrorCount
+				totalTokens = p.accounts[i].TotalTokens
+				totalCredits = p.accounts[i].TotalCredits
+				lastUsed = p.accounts[i].LastUsed
+				updated = true
+				continue
+			}
+			p.accounts[i].RequestCount = requestCount
+			p.accounts[i].ErrorCount = errorCount
+			p.accounts[i].TotalTokens = totalTokens
+			p.accounts[i].TotalCredits = totalCredits
+			p.accounts[i].LastUsed = lastUsed
 		}
+	}
+	if updated {
+		go config.UpdateAccountStats(id, requestCount, errorCount, totalTokens, totalCredits, lastUsed)
 	}
 }
 
@@ -261,4 +413,25 @@ func (p *AccountPool) GetAllAccounts() []config.Account {
 	result := make([]config.Account, len(p.accounts))
 	copy(result, p.accounts)
 	return result
+}
+
+func isOverUsageLimit(acc config.Account) bool {
+	return acc.UsageLimit > 0 && acc.UsageCurrent >= acc.UsageLimit
+}
+
+func effectiveWeight(weight int) int {
+	if weight < 1 {
+		return 1
+	}
+	return weight
+}
+
+func effectiveOverageWeight(weight int) int {
+	if weight < 1 {
+		return 1
+	}
+	if weight > overageFrequencyScale {
+		return overageFrequencyScale
+	}
+	return weight
 }
