@@ -481,7 +481,11 @@ const I18N = {
         'detail.proxyFormatError': 'Invalid proxy format, must start with socks5:// http:// or https://',
         'detail.test': 'Test',
         'detail.testSuccess': 'Connection OK',
-        'detail.testFailed': 'Connection failed'
+        'detail.testFailed': 'Connection failed',
+        'settings.endpointFallback': 'Enable endpoint fallback',
+        'settings.endpointFallbackHint': 'Automatically try other endpoints when the preferred one is unavailable',
+        'models.refreshAll': 'Refresh Models',
+        'models.refreshDone': 'Model list refreshed'
     }
 };
 
