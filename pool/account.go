@@ -77,6 +77,11 @@ func (p *AccountPool) Reload() {
 // GetNext 获取下一个可用账号（加权轮询）
 // 返回账号的独立副本，避免并发请求间的数据竞争
 func (p *AccountPool) GetNext() *config.Account {
+	return p.GetNextExcluding(nil)
+}
+
+// GetNextExcluding 获取下一个可用账号（加权轮询），并跳过指定账号。
+func (p *AccountPool) GetNextExcluding(excluded map[string]bool) *config.Account {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
@@ -94,6 +99,10 @@ func (p *AccountPool) GetNext() *config.Account {
 		idx := atomic.AddUint64(&p.currentIndex, 1) % uint64(n)
 		acc := &p.accounts[idx]
 
+		if excluded != nil && excluded[acc.ID] {
+			seen[acc.ID] = true
+			continue
+		}
 		if seen[acc.ID] {
 			continue
 		}
@@ -125,6 +134,9 @@ func (p *AccountPool) GetNext() *config.Account {
 	var earliest time.Time
 	for i := range p.accounts {
 		acc := &p.accounts[i]
+		if excluded != nil && excluded[acc.ID] {
+			continue
+		}
 		if isOverUsageLimit(*acc) && !acc.AllowOverage && !allowOverUsage {
 			continue
 		}
@@ -186,6 +198,11 @@ func (p *AccountPool) accountHasModel(accountID, model string) bool {
 // model 应为去掉 thinking 后缀的实际模型名。
 // 若无账号有该模型列表数据，行为与 GetNext 相同（乐观路由）。
 func (p *AccountPool) GetNextForModel(model string) *config.Account {
+	return p.GetNextForModelExcluding(model, nil)
+}
+
+// GetNextForModelExcluding 获取下一个支持指定模型的可用账号，并跳过指定账号。
+func (p *AccountPool) GetNextForModelExcluding(model string, excluded map[string]bool) *config.Account {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
@@ -202,6 +219,10 @@ func (p *AccountPool) GetNextForModel(model string) *config.Account {
 		idx := atomic.AddUint64(&p.currentIndex, 1) % uint64(n)
 		acc := &p.accounts[idx]
 
+		if excluded != nil && excluded[acc.ID] {
+			seen[acc.ID] = true
+			continue
+		}
 		if seen[acc.ID] {
 			continue
 		}
@@ -230,6 +251,9 @@ func (p *AccountPool) GetNextForModel(model string) *config.Account {
 	var earliest time.Time
 	for i := range p.accounts {
 		acc := &p.accounts[i]
+		if excluded != nil && excluded[acc.ID] {
+			continue
+		}
 		if !p.accountHasModel(acc.ID, model) {
 			continue
 		}
@@ -318,6 +342,77 @@ func (p *AccountPool) GetLastErrors() map[string]LastError {
 		out[id] = e
 	}
 	return out
+}
+
+func IsAuthFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	lower := strings.ToLower(msg)
+
+	if hasStatusToken(msg, "401") || hasStatusToken(msg, "403") {
+		return true
+	}
+	if strings.Contains(lower, "bad credentials") ||
+		strings.Contains(lower, "invalid_grant") ||
+		strings.Contains(lower, "invalid grant") ||
+		strings.Contains(lower, "invalid_token") ||
+		strings.Contains(lower, "invalid token") ||
+		strings.Contains(lower, "token expired") ||
+		strings.Contains(lower, "token has expired") ||
+		strings.Contains(lower, "unauthorized") {
+		return true
+	}
+	return false
+}
+
+func hasStatusToken(s, status string) bool {
+	for {
+		idx := strings.Index(s, status)
+		if idx < 0 {
+			return false
+		}
+		leftOK := idx == 0 || !isDigit(s[idx-1])
+		rightIdx := idx + len(status)
+		rightOK := rightIdx >= len(s) || !isDigit(s[rightIdx])
+		if leftOK && rightOK {
+			return true
+		}
+		s = s[idx+len(status):]
+	}
+}
+
+func isDigit(b byte) bool {
+	return b >= '0' && b <= '9'
+}
+
+func IsSuspensionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	lower := strings.ToLower(err.Error())
+	return strings.Contains(lower, "temporarily_suspended") ||
+		strings.Contains(lower, "temporarily suspended") ||
+		strings.Contains(lower, "no available kiro profile")
+}
+
+func (p *AccountPool) DisableAccount(id, reason string) {
+	if err := config.SetAccountBanStatus(id, "DISABLED", reason); err != nil {
+		_ = err
+	}
+	p.mu.Lock()
+	p.cooldowns[id] = time.Now().Add(24 * time.Hour)
+	p.mu.Unlock()
+	p.Reload()
+}
+
+func (p *AccountPool) MarkOverLimit(id string) {
+	_ = config.DisableAccountOverage(id)
+	p.mu.Lock()
+	p.cooldowns[id] = time.Now().Add(time.Hour)
+	p.mu.Unlock()
+	p.Reload()
 }
 
 // UpdateToken 更新账号 Token
