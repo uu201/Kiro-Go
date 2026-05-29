@@ -5,6 +5,8 @@
 *.so
 *.dylib
 kiro-go
+/kiro-go
+/kiro-go.exe
 
 # Test binary
 *.test
@@ -16,9 +18,14 @@ kiro-go
 # Dependency directories
 vendor/
 
+# Runtime data
+/data/
+*.log
+
 # IDE
 .idea/
 .vscode/
+.claude/
 *.swp
 *.swo
 *~
@@ -27,6 +34,13 @@ vendor/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Zeabur local CLI context (contains personal project/service IDs)
+.zeabur/
+
+# Local backups / scratch
+backup*/
+PR-*.md
 
 # Config with secrets
 config.json

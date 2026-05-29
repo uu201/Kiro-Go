@@ -52,18 +52,19 @@ func GetPool() *AccountPool {
 }
 
 // Reload 从配置重新加载账号
-// 构建加权列表：weight<=1 出现 1 次，weight>=2 出现 weight 次
+// 构建加权列表：weight<=1 出现 1 次，weight>=2 出现 weight 次。
+// 额度耗尽的账号是否参与调度由上游 OverageStatus 决定（DISABLED → 跳过）。
 func (p *AccountPool) Reload() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	enabled := config.GetEnabledAccounts()
 	var weighted []config.Account
 	for _, a := range enabled {
+		if isOverUsageLimit(a) && !isUpstreamOverageEnabled(a) {
+			continue
+		}
 		w := effectiveWeight(a.Weight) * overageFrequencyScale
-		if isOverUsageLimit(a) {
-			if !a.AllowOverage {
-				continue
-			}
+		if isOverUsageLimit(a) && isUpstreamOverageEnabled(a) {
 			w = effectiveOverageWeight(a.OverageWeight)
 		}
 		for j := 0; j < w; j++ {
@@ -119,8 +120,8 @@ func (p *AccountPool) GetNextExcluding(excluded map[string]bool) *config.Account
 			continue
 		}
 
-		// 跳过额度已用尽的账号（账号级 AllowOverage 或全局 AllowOverUsage 可放行）
-		if isOverUsageLimit(*acc) && !acc.AllowOverage && !allowOverUsage {
+		// 跳过额度已用尽的账号（上游 OverageStatus=ENABLED 或全局 AllowOverUsage 可放行）
+		if isOverUsageLimit(*acc) && !isUpstreamOverageEnabled(*acc) && !allowOverUsage {
 			seen[acc.ID] = true
 			continue
 		}
@@ -137,7 +138,8 @@ func (p *AccountPool) GetNextExcluding(excluded map[string]bool) *config.Account
 		if excluded != nil && excluded[acc.ID] {
 			continue
 		}
-		if isOverUsageLimit(*acc) && !acc.AllowOverage && !allowOverUsage {
+		// 额度用尽的账号不作为 fallback（除非账号级 OverageStatus=ENABLED 或全局允许超额）
+		if isOverUsageLimit(*acc) && !isUpstreamOverageEnabled(*acc) && !allowOverUsage {
 			continue
 		}
 		if cooldown, ok := p.cooldowns[acc.ID]; ok {
@@ -238,7 +240,7 @@ func (p *AccountPool) GetNextForModelExcluding(model string, excluded map[string
 			seen[acc.ID] = true
 			continue
 		}
-		if isOverUsageLimit(*acc) && !acc.AllowOverage && !allowOverUsage {
+		if isOverUsageLimit(*acc) && !isUpstreamOverageEnabled(*acc) && !allowOverUsage {
 			seen[acc.ID] = true
 			continue
 		}
@@ -257,7 +259,7 @@ func (p *AccountPool) GetNextForModelExcluding(model string, excluded map[string
 		if !p.accountHasModel(acc.ID, model) {
 			continue
 		}
-		if isOverUsageLimit(*acc) && !acc.AllowOverage && !allowOverUsage {
+		if isOverUsageLimit(*acc) && !isUpstreamOverageEnabled(*acc) && !allowOverUsage {
 			continue
 		}
 		if cooldown, ok := p.cooldowns[acc.ID]; ok {
@@ -407,8 +409,11 @@ func (p *AccountPool) DisableAccount(id, reason string) {
 	p.Reload()
 }
 
+// MarkOverLimit marks an account as over usage limit (after a 402 / OVERAGE response).
+// With the upstream OverageStatus model, the live status is refreshed via
+// FetchOverageStatus from the request handler; here we just cooldown briefly so
+// the next attempt picks a different account, then reload.
 func (p *AccountPool) MarkOverLimit(id string) {
-	_ = config.DisableAccountOverage(id)
 	p.mu.Lock()
 	p.cooldowns[id] = time.Now().Add(time.Hour)
 	p.mu.Unlock()
@@ -512,6 +517,12 @@ func (p *AccountPool) GetAllAccounts() []config.Account {
 
 func isOverUsageLimit(acc config.Account) bool {
 	return acc.UsageLimit > 0 && acc.UsageCurrent >= acc.UsageLimit
+}
+
+// isUpstreamOverageEnabled reports whether the upstream Overages switch is ON for this account.
+// "ENABLED" → true; anything else (DISABLED, UNKNOWN, empty) → false.
+func isUpstreamOverageEnabled(acc config.Account) bool {
+	return strings.EqualFold(acc.OverageStatus, "ENABLED")
 }
 
 func effectiveWeight(weight int) int {
