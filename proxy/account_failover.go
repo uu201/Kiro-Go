@@ -106,7 +106,7 @@ func (h *Handler) handleAccountFailure(account *config.Account, err error) {
 		// Profile ARN may be transiently unresolvable (upstream blip, stale token).
 		// Treat as a soft failure: short cooldown so the next request rotates account,
 		// but never auto-disable — operators can still investigate via warn logs.
-		h.pool.RecordError(account.ID, false)
+		h.pool.RecordError(account.ID, false, errMsg)
 	case isAuthErrorMessage(errMsg):
 		h.disableAccount(account, "BANNED", "Authentication failed - token invalid or expired")
 	default:
